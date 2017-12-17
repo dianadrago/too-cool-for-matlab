@@ -9,6 +9,7 @@ library(affy)
 library(limma)
 library(frma)
 library(hgu133plus2hsentrezgcdf)
+library(RColorBrewer)
 
 breast_affybatch <- ReadAffy(celfile.path="/home/diana/Documents/yossi/Swati/expression_data/breast_cancer_geo/GSE36774_RAW", cdfname="hgu133plus2hsentrezgcdf")
 colon_affybatch <- ReadAffy(celfile.path="/home/diana/Documents/yossi/Swati/expression_data/colon_cancer_geo/GSE17536_RAW", cdfname="hgu133plus2hsentrezgcdf")
@@ -34,12 +35,12 @@ normalize_custom <- function(affybatch, report_name){
   N=length(affybatch@phenoData@data$sample)
   pm.mm=0
   for (i in 1:N) {pm.mm[i] = mean(mm(affybatch[,i])>pm(affybatch[,i]))}
-  mycolors = rep(c("blue","red","green", "magenta"), each = 2)
+  mycolors = colorRampPalette(brewer.pal(11,"Spectral"))(N)
   hist(affybatch, col=mycolors, main="Raw data distribution")
   boxplot(affybatch,col=mycolors, main="Raw data distribution")
   plot(100*pm.mm, type='h', main='Percent of MMs > PMs', ylab="%",xlab="Microarrays", ylim=c(0,50), col="red", lwd=5 )
   grid(nx = NULL, ny = 6, col = "blue", lty = "dotted",lwd = par("lwd"), equilogs = TRUE)
-  mycolors = rep(c("blue","red","green", "magenta"), each = 2)
+  mycolors = colorRampPalette(brewer.pal(11,"Spectral"))(N)
   plotDensity(eset, col=mycolors, main="Data After normalization")
   boxplot(eset,col=mycolors, main="Data After normalization")
   dev.off()
