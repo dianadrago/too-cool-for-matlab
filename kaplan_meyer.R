@@ -1,6 +1,7 @@
 # survival plots with R
 
 # https://cran.r-project.org/web/packages/survminer/vignettes/Informative_Survival_Plots.html
+setwd("/home/diana/Documents/yossi/Swati/expression_data/")
 
 library(affy)
 library(limma)
@@ -8,6 +9,8 @@ library(frma)
 library(hgu133plus2hsentrezgcdf)
 library(RColorBrewer)
 library(plyr)
+library(survminer)
+library(survival)
 
 ewing_affybatch<- ReadAffy(celfile.path="/home/diana/Documents/yossi/Swati/expression_data/ewing_sarcoma_geo/GSE34620_RAW", cdfname="hgu133plus2hsentrezgcdf")
 ewing_report <- "ewing_norm_report.pdf"
@@ -15,100 +18,54 @@ ewing_exp <- normalize_custom(ewing_affybatch, ewing_report)
 remove(ewing_affybatch)
 ewing_exp <- normalizeBetweenArrays(ewing_exp)
 
+names <- read.table("mart_export.txt", sep='\t', header = T)
+names_sort <- na.omit(names[order(names$NCBI.gene.ID),])
+names_sort <- unique(names_sort[,2:3])
+
 km_patients <- colnames(ewing_exp)[grep("._R[0-9]", colnames(ewing_exp))]
 ewing_exp_km <- ewing_exp[,km_patients]
 colnames(ewing_exp_km) <- gsub('^.{10}|.{4}$', '', km_patients)
 
 # define gene of interest
-gluco_ewing <- t(ewing_exp_km["2313",])
-
-#hist(gluco_ewing)
-
-library(survminer)
-library(survival)
-# library(RTCGA.clinical)
-# survivalTCGA(BRCA.clinical, OV.clinical,
-#             extract.cols = "admin.disease_code") -> BRCAOV.survInfo
-
-# strate patients by median expression of gene of interest
-ewin <- read.table("ewing_sarcoma_geo/GSE17618_Survival_data_Savola.txt", sep = '\t', row.names = 1, header = T,stringsAsFactors=FALSE)
-ewin <- ewin[,1:7]
-high <- gluco_ewing[,gluco_ewing[1,]>=median(gluco_ewing)]
-high <- replace(high, 1:(length(high)), "High")
-low <- gluco_ewing[,gluco_ewing[1,]<=median(gluco_ewing)]
-low <- replace(low, 1:(length(low)), "Low")
-
-Expression <- c(high, low)
-ewin <- ewin[names(Expression),]
-ewin <- cbind(ewin,Expression)
-ewin[ewin=="Dead"]<-2
-ewin[ewin=="NED" | ewin=="AWD"]<-1
-
-#ewin_primary <- ewin[ewin$State == "Primary",]
-#ewin <- ewin_primary
-
-ewin$SurvObj <- with(ewin, Surv(OVS..months., Status == "2"))
-
-km.as.one <- survfit(ewin$SurvOb ~ 1, data = ewin, conf.type = "log-log")
-km.as.one
-plot(km.as.one)
-
-# library(rms)
-km.by.exp <- survfit(SurvObj ~ Expression, data = ewin, conf.type = "log-log")
-km.by.exp
-ggsurvplot((km.by.exp), pval = T, conf.int = TRUE, title= "FLI1 expression OVS survival plot")
-
-##################################
-
-ewin$SurvObj_2 <- with(ewin, Surv(EFS..moths., Status == "2"))
-
-km.as.one_EFS <- survfit(ewin$SurvObj_2 ~ 1, data = ewin, conf.type = "log-log")
-km.as.one_EFS
-plot(km.as.one_EFS)
-
-km.by.exp_EFS <- survfit(SurvObj_2 ~ Expression, data = ewin, conf.type = "log-log")
-km.by.exp_EFS
-ggsurvplot((km.by.exp_EFS),pval = T, conf.int = TRUE, title= "FLI1 expression EFS survival plot")
-
-###################################
-
-# fit <- survfit(Surv(times, patient.vital_status) ~ admin.disease_code,
-#                data = BRCAOV.survInfo)
-# # Visualize with survminer
-# ggsurvplot(fit, data = BRCAOV.survInfo, risk.table = TRUE)
-# 
-# plot(ewing_exp_km)
+ewin_survival <- read.table("ewing_sarcoma_geo/GSE17618_Survival_data_Savola.txt", sep = '\t', row.names = 1, header = T,stringsAsFactors=FALSE)
+ewin_survival <- ewin_survival[,1:7]
+ewin_survival[ewin_survival=="Dead"] <-1
+ewin_survival[ewin_survival=="NED" | ewin_survival=="AWD"]<-0
 
 
-###################################
+candidates <- c("A2M","ACTB","ANXA1","ANXA2","ANXA5","CALM2","COL1A2",
+               "COL6A3","DAD1","DPYSL2","IARS","IGFBP7","MT2A","PPA1","PSMA6",
+               "PSMB4","RPL3","RPL37A","S100A10","SELENOP","SRP9","UBE2E1","YWHAZ",
+               "ZFAND5","EIF3D","EIF3H","COX7A2L","TMSB10","MRPL33","PRDX6","MAFB",
+               "PDIA6","ATP6AP2","BASP1","PNRC1","TMED10","USP22","ISCU","SEC61G",
+               "MMADHC","HSD17B12","NDUFA12","GOLPH3","TUBB6","MRFAP1","ZNF664",
+               "IGLL1","PDE6C","PF4V1","SLC13A1","USH2A","MCF2L2","MORC1","PCDH15","ABCA13",
+               "KIAA0825","EYS","IYD")
 
-# heatmap
-library(gplots)
+ewing_surv_plot <- function(gene){
+gene_code <- as.character(names_sort[names_sort$Gene.name == gene,2])
+gene_ewing <- t(ewing_exp_km[gene_code,])
+gene_ewing <- t(colMeans(data.matrix(gene_ewing)))
+rownames(gene_ewing) <- gene
+dataset_clin <- ewin_survival[(as.vector(colnames(gene_ewing))),]
+survival <- cbind(dataset_clin, exp = as.numeric(t(gene_ewing)))
+colnames(survival)[8] <- gene
+cut_ewing<- surv_cutpoint(survival, time = "OVS..months.", event="Status", variables = gene)
+cut_ewing_plot <- surv_categorize(cut_ewing)
+fit <- do.call(survival::survfit, list(Surv(OVS..months., Status == "1")~ cut_ewing_plot[,3], data = cut_ewing_plot))
+ggsurvplot(fit = fit, risk.table = TRUE,  pval = TRUE,
+           conf.int = T,
+           risk.table.y.text.col = T, palette =c("darkorange", "mediumorchid4"),
+           risk.table.y.text = FALSE,
+           legend.labs=c(paste(gene,"= high"), paste(gene,"= low")))
+}
 
-gluco <- rbind(gluco_ewing,gluco_ewing)
 
-my_palette <- rev(colorRampPalette(brewer.pal(11, "Spectral"))(n = 1000))
-
-row.distance = dist(gluco, method = "euclidean")
-row.cluster = hclust(row.distance, method = "ward.D2")
-
-col.distance = dist(t(gluco), method = "euclidean")
-col.cluster = hclust(col.distance, method = "ward.D2")
+lapply(candidates, ewing_surv_plot)
 
 
-###############################################################################
-## Plotting the Heatmap!! (where all colorful things happen...)
-###############################################################################
 
-heatmap.2(gluco,
-          main = "" ,
-          density.info = "none",
-          key.xlab="log intensity",
-          margins = c(4,6),
-          trace = "none",
-          col = my_palette,
-          Rowv = as.dendrogram(row.cluster),
-          keysize = 1.5,
-          key.par=list(mar=c(3,0,3,0)),
-          key.title = "",
-          lhei=c(2,7))
+
+
+
+
